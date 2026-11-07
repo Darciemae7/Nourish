@@ -1,0 +1,15 @@
+{
+  "name": "nourish-zero-cost",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "vite --host 0.0.0.0",
+    "build": "vite build --base=./",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "vite": "^6.1.0"
+  },
+  "devDependencies": {}
+}
