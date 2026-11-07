@@ -10,63 +10,48 @@ const todayKey=()=>new Date().toLocaleDateString("en-CA");
 const dateLabel=()=>new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const nfmt=x=>x==null?"—":(Math.round(x*10)/10).toString();
-function save(){localStorage.setItem(STORE,JSON.stringify(entries));render();}
-function findFood(text){
- const q=text.toLowerCase().trim();
- return foods.find(f=>f.aliases.some(a=>q===a||q.includes(a)))||foods.find(f=>f.name.toLowerCase().includes(q));
-}
-function parseEntry(raw){
- // Recognises a small number of common quantity expressions and common food names.
- const bits=raw.split(/,| and | with /i).map(x=>x.trim()).filter(Boolean);
- return bits.map(bit=>{
-   const f=findFood(bit); if(!f)return {label:bit,food:null,grams:100,confidence:"low"};
-   const m=bit.match(/(\d+(?:\.\d+)?)\s*(g|grams?|ml|millilitres?)\b/i);
-   const count=bit.match(/\b(one|two|three|four|five|half|a)\b/i);
-   let grams=m?Number(m[1]):100;
-   if(!m&&count){const c=count[1].toLowerCase();grams=({one:50,two:100,three:150,four:200,five:250,half:75,a:50})[c]||100;}
-   return {label:f.name,food:f,grams,confidence:m?"medium":"low"};
- });
-}
-function calculate(lines){
- const result={};const fields=["kcal","protein","carbs","sugars","fibre","fat","sat","iron","calcium","magnesium","potassium","zinc","folate","b12","vitc","vitd","vitA"];
- fields.forEach(k=>result[k]=0);
- lines.forEach(line=>{if(!line.food)return;fields.forEach(k=>result[k]+=(line.food[k]||0)*line.grams/100);});
- return result;
-}
-function addDraft(){
- const text=document.querySelector("#foodText").value.trim();
- if(!text){alert("Please describe what you ate.");return;}
- const lines=parseEntry(text);
- draft.push({id:crypto.randomUUID(),meal:document.querySelector("#meal").value,text,lines,createdAt:new Date().toISOString()});
- document.querySelector("#foodText").value="";
- render();
-}
-function render(){
- const day=entries.filter(e=>new Date(e.createdAt).toLocaleDateString("en-CA")===todayKey());
- app.innerHTML=`
- <header><div class="brand"><div><h1>nourish.</h1><p>Your personal nutrition journal</p></div><span class="leaf">❧</span></div><div class="eyebrow">YOUR PRIVATE FOOD DIARY</div><div class="date">${dateLabel()}</div></header>
- <nav><button class="active" data-tab="diary">Diary</button><button data-tab="nutrition">Nutrition</button><button data-tab="insights">Insights</button></nav>
- <main>
- <section id="diary" class="screen active">
- <h2>Your food diary</h2><p class="sub">A gentle record of what you eat. No weight goals, no judgement.</p>
- <div class="card"><h3>Add a food entry</h3><label>MEAL</label><select id="meal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option><option>Drink</option></select>
- <label>WHAT DID YOU EAT?</label><textarea id="foodText" placeholder="For example: 40g porridge oats, 150ml milk and one banana. Separate foods with commas or 'and'."></textarea>
- <p class="hint">For better estimates, include amounts in grams or millilitres. You can edit every ingredient and quantity before saving.</p>
- <button class="primary" id="parse">Add ingredients to review</button></div>
- ${draft.length?`<div class="card"><h3>Review your ingredients</h3><p class="sub">Check the matches and quantities. Unknown foods are left uncalculated rather than guessed.</p>${draft.map(d=>`<div class="draft"><b>${esc(d.meal)}</b><p>${esc(d.text)}</p>${d.lines.map((l,i)=>`<div class="ingredient"><div><b>${esc(l.label)}</b><small>${l.food?`Matched food · ${l.confidence} quantity confidence`:"No database match — not included in totals"}</small></div><input aria-label="Grams" type="number" min="0" step="1" value="${l.grams}" data-draft="${d.id}" data-index="${i}"><span>g</span></div>`).join("")}<button class="primary" data-save="${d.id}">Confirm and save entry</button></div>`).join("")}</div>`:""}
- <div class="section"><h3>Today's entries</h3><span class="tag">${day.length} recorded</span></div>
- ${day.length?day.slice().reverse().map(e=>`<div class="card entry"><div class="entrytop"><b>${esc(e.meal)}</b><button class="delete" data-delete="${e.id}">Delete</button></div><p>${esc(e.text)}</p><small>${e.lines.filter(x=>x.food).length} database matches · ${e.lines.filter(x=>!x.food).length} unmatched foods</small></div>`).join(""):`<div class="card empty">Your diary is ready. Add an entry whenever it feels useful.</div>`}
- </section>
- <section id="nutrition" class="screen"><h2>Nutritional overview</h2><p class="sub">Daily estimates from confirmed database matches. Missing matches are not counted as zero.</p>
- <div class="card energy"><div><b>Energy information</b><p class="hint">Hidden unless you choose to reveal it.</p></div><button class="soft" id="togglecal">${caloriesShown?"Hide":"Reveal calories"}</button><div id="calval" class="calval" style="display:${caloriesShown?"block":"none"}">${nfmt(sum(day,"kcal"))} kcal estimated</div></div>
- <h3>Macronutrients</h3><div class="grid">${tile("Protein","protein","g",day)}${tile("Carbohydrate","carbs","g",day)}${tile("Sugars","sugars","g",day)}${tile("Total fat","fat","g",day)}${tile("Saturated fat","sat","g",day)}</div>
- <h3>Fibre</h3><div class="card"><div class="big">${nfmt(sum(day,"fibre"))} g</div><p class="hint">Estimated from matched foods only. No daily target is imposed.</p></div>
- <h3>Vitamins</h3><div class="grid">${tile("Vitamin A","vitA","µg",day)}${tile("Vitamin C","vitc","mg",day)}${tile("Vitamin D","vitd","µg",day)}${tile("Folate","folate","µg",day)}${tile("Vitamin B12","b12","µg",day)}</div>
- <h3>Minerals</h3><div class="grid">${tile("Iron","iron","mg",day)}${tile("Calcium","calcium","mg",day)}${tile("Magnesium","magnesium","mg",day)}${tile("Potassium","potassium","mg",day)}${tile("Zinc","zinc","mg",day)}</div>
- <p class="hint">This starter food table covers a limited set of foods and nutrients. It is not yet the complete UK CoFID dataset.</p></section>
- <section id="insights" class="screen"><h2>Patterns, not perfection</h2><p class="sub">A record to help you and your clinician understand your diet.</p><div class="card"><h3>How estimates work</h3><p>Foods matched to the starter database are calculated using per-100g values scaled to your confirmed quantity. Unmatched ingredients are listed but excluded from totals.</p><p class="hint">This is a limited demonstration dataset, not a complete or clinically validated nutrient analysis. AI recognition is intentionally not claimed in this zero-cost version.</p></div>
- <div class="card"><h3>Your data stays on this device</h3><p class="hint">Diary entries are stored in this browser's local storage. Clearing browser data or changing devices can remove them. Export a backup regularly.</p><button class="primary" id="export">Export diary backup</button><button class="soft" id="importbtn">Import backup</button><input id="importfile" type="file" accept="application/json" hidden><button class="deleteall" id="clear">Delete all diary data</button></div></section>
- <footer>nourish. · A little care, every day.<br>No weight tracking. No food guilt.</footer></main>`;
+// UK adult female 19–50 reference values. These are population references, not personal prescriptions.
+const targets=[
+ {label:"Protein",key:"protein",unit:"g",target:45,kind:"minimum",group:"Macronutrients"},
+ {label:"Fibre",key:"fibre",unit:"g",target:30,kind:"minimum",group:"Fibre"},
+ {label:"Saturated fat",key:"sat",unit:"g",target:24,kind:"maximum",group:"Macronutrients"},
+ {label:"Vitamin A",key:"vitA",unit:"µg",target:600,kind:"minimum",group:"Vitamins"},
+ {label:"Vitamin C",key:"vitc",unit:"mg",target:40,kind:"minimum",group:"Vitamins"},
+ {label:"Vitamin D",key:"vitd",unit:"µg",target:10,kind:"minimum",group:"Vitamins"},
+ {label:"Folate",key:"folate",unit:"µg",target:200,kind:"minimum",group:"Vitamins"},
+ {label:"Vitamin B12",key:"b12",unit:"µg",target:1.5,kind:"minimum",group:"Vitamins"},
+ {label:"Iron",key:"iron",unit:"mg",target:14.8,kind:"minimum",group:"Minerals"},
+ {label:"Calcium",key:"calcium",unit:"mg",target:700,kind:"minimum",group:"Minerals"},
+ {label:"Magnesium",key:"magnesium",unit:"mg",target:270,kind:"minimum",group:"Minerals"},
+ {label:"Potassium",key:"potassium",unit:"mg",target:3500,kind:"minimum",group:"Minerals"},
+ {label:"Zinc",key:"zinc",unit:"mg",target:7,kind:"minimum",group:"Minerals"}
+];
+function save(){try{localStorage.setItem(STORE,JSON.stringify(entries));render();}catch(e){alert("Your browser storage is nearly full. Export a backup and remove some older photo entries before adding more photos.");}}
+function findFood(text){const q=text.toLowerCase().trim();return foods.find(f=>f.aliases.some(a=>q===a||q.includes(a)))||foods.find(f=>f.name.toLowerCase().includes(q));}
+function parseEntry(raw){const bits=raw.split(/,| and | with /i).map(x=>x.trim()).filter(Boolean);return bits.map(bit=>{const f=findFood(bit);if(!f)return {label:bit,food:null,grams:100,confidence:"low"};const m=bit.match(/(\d+(?:\.\d+)?)\s*(g|grams?|ml|millilitres?)\b/i);const count=bit.match(/\b(one|two|three|four|five|half|a)\b/i);let grams=m?Number(m[1]):100;if(!m&&count){const c=count[1].toLowerCase();grams=({one:50,two:100,three:150,four:200,five:250,half:75,a:50})[c]||100;}return {label:f.name,food:f,grams,confidence:m?"medium":"low"};});}
+function calculate(lines){const result={};const fields=["kcal","protein","carbs","sugars","fibre","fat","sat","iron","calcium","magnesium","potassium","zinc","folate","b12","vitc","vitd","vitA"];fields.forEach(k=>result[k]=0);lines.forEach(line=>{if(!line.food)return;fields.forEach(k=>result[k]+=(line.food[k]||0)*line.grams/100);});return result;}
+function sum(day,k){let total=0,any=false;day.forEach(e=>e.lines.forEach(l=>{if(l.food&&l.food[k]!=null){total+=(l.food[k]||0)*l.grams/100;any=true;}}));return any?total:null;}
+function percent(value,target){return value==null?0:Math.max(0,Math.min(100,value/target*100));}
+function progressCard(t,day){const v=sum(day,t.key);const p=percent(v,t.target);const isMax=t.kind==="maximum";return `<div class="progress-card"><div class="progress-head"><span>${t.label}</span><b>${nfmt(v)} / ${t.target} ${t.unit}</b></div><div class="track"><div class="fill ${isMax?"limit":""}" style="width:${p}%"></div></div><div class="progress-foot">${v==null?"No matched food data yet":`${Math.round(p)}% of ${isMax?"upper reference":"daily reference"}${v>t.target?" · above reference":""}`}</div></div>`;}
+function tile(label,key,unit,day){return `<div class="tile"><small>${label}</small><b>${nfmt(sum(day,key))}</b><span>${unit}</span></div>`;}
+async function compressPhoto(file){if(!file)return null;try{const bitmap=await createImageBitmap(file);const scale=Math.min(1,900/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement("canvas");canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();return canvas.toDataURL("image/jpeg",0.62);}catch{ return await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}}
+async function addDraft(){const text=document.querySelector("#foodText").value.trim();if(!text){alert("Please describe what you ate.");return;}const before=await compressPhoto(document.querySelector("#beforePhoto").files[0]);const after=await compressPhoto(document.querySelector("#afterPhoto").files[0]);const lines=parseEntry(text);draft.push({id:crypto.randomUUID(),meal:document.querySelector("#meal").value,text,lines,photoBefore:before,photoAfter:after,createdAt:new Date().toISOString()});document.querySelector("#foodText").value="";render();}
+function photoBlock(src,label){return src?`<div class="photo-wrap"><img src="${src}" alt="${label}"><small>${label}</small></div>`:"";}
+function render(){const day=entries.filter(e=>new Date(e.createdAt).toLocaleDateString("en-CA")===todayKey());app.innerHTML=`
+<header><div class="brand"><div><h1>nourish.</h1><p>Your personal nutrition journal</p></div><span class="leaf">❧</span></div><div class="eyebrow">YOUR PRIVATE FOOD DIARY</div><div class="date">${dateLabel()}</div></header>
+<nav><button class="active" data-tab="diary">Diary</button><button data-tab="nutrition">Nutrition</button><button data-tab="insights">Insights</button></nav><main>
+<section id="diary" class="screen active"><h2>Your food diary</h2><p class="sub">A gentle record of what you eat. No weight goals, no judgement.</p>
+<div class="card"><h3>Add a food entry</h3><label>MEAL</label><select id="meal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option><option>Drink</option></select><label>WHAT DID YOU EAT?</label><textarea id="foodText" placeholder="For example: 40g porridge oats, 150ml milk and one banana. Separate foods with commas or 'and'."></textarea><p class="hint">For better estimates, include amounts in grams or millilitres. You can edit every ingredient and quantity before saving.</p>
+<div class="photo-inputs"><div><label>BEFORE-MEAL PHOTO (OPTIONAL)</label><input id="beforePhoto" type="file" accept="image/*" capture="environment"></div><div><label>AFTER-MEAL PHOTO (OPTIONAL)</label><input id="afterPhoto" type="file" accept="image/*" capture="environment"></div></div><p class="hint">Photos are resized and saved with this diary entry on this device. They help you compare what was served with what was left; Nourish does not automatically identify foods from photos yet.</p><button class="primary" id="parse">Add ingredients to review</button></div>
+${draft.length?`<div class="card"><h3>Review your ingredients</h3><p class="sub">Check the matches and quantities. Unknown foods are left uncalculated rather than guessed.</p>${draft.map(d=>`<div class="draft"><b>${esc(d.meal)}</b><p>${esc(d.text)}</p><div class="photo-row">${photoBlock(d.photoBefore,"Before meal")}${photoBlock(d.photoAfter,"After meal")}</div>${d.lines.map((l,i)=>`<div class="ingredient"><div><b>${esc(l.label)}</b><small>${l.food?`Matched food · ${l.confidence} quantity confidence`:"No database match — not included in totals"}</small></div><input aria-label="Grams" type="number" min="0" step="1" value="${l.grams}" data-draft="${d.id}" data-index="${i}"><span>g</span></div>`).join("")}<button class="primary" data-save="${d.id}">Confirm and save entry</button></div>`).join("")}</div>`:""}
+<div class="section"><h3>Today's entries</h3><span class="tag">${day.length} recorded</span></div>${day.length?day.slice().reverse().map(e=>`<div class="card entry"><div class="entrytop"><b>${esc(e.meal)}</b><button class="delete" data-delete="${e.id}">Delete</button></div><p>${esc(e.text)}</p><div class="photo-row">${photoBlock(e.photoBefore,"Before meal")}${photoBlock(e.photoAfter,"After meal")}</div><small>${e.lines.filter(x=>x.food).length} database matches · ${e.lines.filter(x=>!x.food).length} unmatched foods</small></div>`).join(""):`<div class="card empty">Your diary is ready. Add an entry whenever it feels useful.</div>`}</section>
+<section id="nutrition" class="screen"><h2>Nutritional overview</h2><p class="sub">Estimated from confirmed database matches. A missing match is not counted as zero.</p><div class="profile-note"><b>Your reference profile</b><span>33 years · 5ft 5in · adult female reference group (19–50)</span><small>Height is recorded for context; most UK vitamin and mineral reference values are based on age and sex, not height.</small></div>
+<div class="card energy"><div><b>Energy information</b><p class="hint">Hidden unless you choose to reveal it.</p></div><button class="soft" id="togglecal">${caloriesShown?"Hide":"Reveal calories"}</button><div id="calval" class="calval" style="display:${caloriesShown?"block":"none"}">${nfmt(sum(day,"kcal"))} kcal estimated</div></div>
+<h3>Macronutrients</h3><div class="grid">${tile("Protein","protein","g",day)}${tile("Carbohydrate","carbs","g",day)}${tile("Total fat","fat","g",day)}${tile("Saturated fat","sat","g",day)}</div><div class="card"><h3>Daily reference comparisons</h3>${progressCard(targets[0],day)}${progressCard(targets[2],day)}<p class="hint">UK carbohydrate and total-fat recommendations are expressed as a proportion of food energy, not fixed gram targets. Total sugars in this starter database cannot be compared reliably with the free-sugars limit.</p></div>
+<h3>Fibre</h3><div class="card">${progressCard(targets[1],day)}</div><h3>Vitamins</h3><div class="card">${targets.filter(t=>t.group==="Vitamins").map(t=>progressCard(t,day)).join("")}</div><h3>Minerals</h3><div class="card">${targets.filter(t=>t.group==="Minerals").map(t=>progressCard(t,day)).join("")}</div>
+<p class="hint">References are UK adult female population values, not personal prescriptions or targets to hit every day. Iron reference is 14.8mg for women aged 19–50. Food data is a small starter table and incomplete; blank or low totals may reflect missing database values, not necessarily low intake.</p></section>
+<section id="insights" class="screen"><h2>Patterns, not perfection</h2><p class="sub">A record to help you understand your diet and discuss it with a clinician if useful.</p><div class="card"><h3>How the reference values work</h3><p>Daily reference values are population guidelines, not a pass/fail score. Your age places you in the adult 19–50 group. Height does not determine most vitamin and mineral requirements.</p><p class="hint">Protein is shown against the UK adult female reference intake of 45g; fibre against 30g; micronutrients use UK adult female reference values. Carbohydrate and total fat are not assigned fixed gram goals.</p></div><div class="card"><h3>Photo diary</h3><p>Before- and after-meal photos are stored with each entry on this device. They are a visual record only: there is no automatic AI food recognition or portion measurement in this free version.</p></div><div class="card"><h3>Your data stays on this device</h3><p class="hint">Diary entries and compressed photos are stored in this browser's local storage. Clearing browser data or changing devices can remove them. Export a backup regularly; backups can be large if they include photos.</p><button class="primary" id="export">Export diary backup</button><button class="soft" id="importbtn">Import backup</button><input id="importfile" type="file" accept="application/json" hidden><button class="deleteall" id="clear">Delete all diary data</button></div></section>
+<footer>nourish. · A little care, every day.<br>No weight tracking. No food guilt.</footer></main>`;
  document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("active",x.id===b.dataset.tab));});
  document.querySelector("#parse").onclick=addDraft;
  document.querySelectorAll("[data-draft]").forEach(inp=>inp.onchange=()=>{const d=draft.find(x=>x.id===inp.dataset.draft);if(d)d.lines[Number(inp.dataset.index)].grams=Math.max(0,Number(inp.value)||0);});
@@ -78,8 +63,6 @@ function render(){
  const file=document.querySelector("#importfile");if(file)file.onchange=async()=>{try{const parsed=JSON.parse(await file.files[0].text());if(Array.isArray(parsed)){entries=parsed;save();}}catch{alert("That backup file could not be read.");}};
  const cl=document.querySelector("#clear");if(cl)cl.onclick=()=>{if(confirm("Delete all entries from this device?")){entries=[];save();}};
 }
-function sum(day,k){let total=0,any=false;day.forEach(e=>e.lines.forEach(l=>{if(l.food){total+=(l.food[k]||0)*l.grams/100;any=true;}}));return any?total:null;}
-function tile(label,key,unit,day){return `<div class="tile"><small>${label}</small><b>${nfmt(sum(day,key))}</b><span>${unit}</span></div>`;}
 function download(data,name){const a=document.createElement("a"),u=URL.createObjectURL(new Blob([data],{type:"application/json"}));a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
-if("serviceWorker" in navigator)navigator.serviceWorker.register(import.meta.env.BASE_URL + "sw.js").catch(()=>{});
+if("serviceWorker" in navigator)navigator.serviceWorker.register(import.meta.env.BASE_URL+"sw.js").catch(()=>{});
 render();
